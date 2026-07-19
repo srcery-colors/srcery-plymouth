@@ -1,0 +1,350 @@
+# srcery Plymouth theme
+# Background matches the srcery GRUB theme exactly (#1C1B19) so the
+# GRUB -> Plymouth handoff is a seamless single color.
+#
+# Palette (srcery-colors). Values are 0..1 floats: hex / 255.
+# If srcery-palette changes hex values, update this block only.
+
+palette.bg.red = 0.1098;      palette.bg.green = 0.1059;      palette.bg.blue = 0.0980;   # black        #1C1B19
+palette.fg.red = 0.9882;      palette.fg.green = 0.9098;      palette.fg.blue = 0.7647;   # bright_white #FCE8C3
+palette.dim.red = 0.5686;     palette.dim.green = 0.5059;     palette.dim.blue = 0.4588;  # bright_black #918175
+palette.orange.red = 1.0000;  palette.orange.green = 0.3725;  palette.orange.blue = 0.0; # orange       #FF5F00
+palette.red.red = 0.9373;     palette.red.green = 0.1843;     palette.red.blue = 0.1529;  # red          #EF2F27
+
+Window.SetBackgroundTopColor(palette.bg.red, palette.bg.green, palette.bg.blue);
+Window.SetBackgroundBottomColor(palette.bg.red, palette.bg.green, palette.bg.blue);
+
+# --------------------------------------------------------------- mode ---
+# The GRUB-continuity slide-in only makes sense when actually booting —
+# there's no GRUB screen before a shutdown/reboot/suspend splash, so
+# playing that animation there just looks like a stray glitch. Plymouth
+# tells us which splash this is via GetMode(): "boot", "shutdown",
+# "reboot", "suspend", "updates", "system-upgrade", "firmware-upgrade".
+MODE = Plymouth.GetMode();
+IS_BOOT = (MODE == "boot");
+IS_SHUTDOWN_LIKE = (MODE == "shutdown" || MODE == "reboot");
+
+# ---------------------------------------------------------------- layout ---
+# Window.GetWidth()/GetHeight() are read fresh on every refresh tick (via
+# recompute_layout below) rather than once here. The DRM renderer can
+# negotiate a placeholder buffer size before settling on the real native
+# mode (visible in `plymouth --debug` as an early tiny buffer followed by
+# the real one) — if geometry were only read once at script-load time,
+# every position computed from it goes stale the moment the real buffer
+# size lands, and sprites end up offset. recompute_layout() re-derives
+# everything only when the size actually changes, so it self-corrects
+# regardless of when that happens.
+
+last_w = 0;
+last_h = 0;
+
+fun recompute_layout() {
+    new_w = Window.GetWidth();
+    new_h = Window.GetHeight();
+    if (new_w == last_w && new_h == last_h)
+        return;
+    last_w = new_w;
+    last_h = new_h;
+
+    screen.w = new_w;
+    screen.h = new_h;
+    screen.x = Window.GetX();
+    screen.y = Window.GetY();
+    screen.cx = screen.x + screen.w / 2;
+    screen.cy = screen.y + screen.h / 2;
+
+    if (eye.native_w) {
+        eye.end_x = screen.cx - eye.native_w / 2;
+        eye.end_y = screen.cy - eye.native_h / 2 - 40;
+
+        eye.start_w = eye.native_w * eye.start_scale;
+        eye.start_h = eye.native_h * eye.start_scale;
+        eye.start_x = screen.x + screen.w * EYE_START_X_FRAC - eye.start_w / 2;
+        eye.start_y = screen.y + screen.h * EYE_START_Y_FRAC - eye.start_h / 2;
+
+        if (eye.sprite && eye.state != "intro")
+            eye.sprite.SetPosition(eye.end_x, eye.end_y, 100);
+    }
+
+    if (progress_box.sprite) {
+        progress_box.x = screen.cx - progress_box.image.GetWidth() / 2;
+        progress_box.y = eye.end_y + eye.native_h + 40;
+        progress_box.sprite.SetPosition(progress_box.x, progress_box.y, 100);
+        progress_bar.x = progress_box.x + 2;
+        progress_bar.y = progress_box.y + 2;
+        progress_bar.sprite.SetPosition(progress_bar.x, progress_bar.y, 101);
+    }
+
+    if (message_sprite)
+        message_sprite.SetPosition(screen.x + 20, screen.y + screen.h - 40, 110);
+}
+
+recompute_layout();
+
+# ------------------------------------------------------------------ logo ---
+# The srcery eye-pyramid glyph (official asset, CC-BY-4.0, Daniel Berg /
+# srcery-colors contributors — see README/ATTRIBUTION). Frames 0-4 are the
+# glyph's own built-in blink keyframes: open, open, half, closed, open.
+#
+# INTRO ANIMATION: GRUB's theme.txt places the same glyph left-anchored at
+# roughly (15% width, 50% height) next to the boot menu. To make the GRUB ->
+# Plymouth handoff read as one continuous motion instead of a cut, Plymouth
+# spawns the glyph at that same fractional position, small, then eases it
+# to the centered idle spot. If you move the image block in
+# grub/srcery/theme.txt, update these two fractions to match.
+EYE_START_X_FRAC = 0.15;
+EYE_START_Y_FRAC = 0.50;
+
+for (i = 0; i < 5; i++) {
+    eye.frame[i] = Image("eye-0" + i + ".png");
+}
+
+eye.native_w = eye.frame[0].GetWidth();
+eye.native_h = eye.frame[0].GetHeight();
+eye.start_scale = 0.55;
+
+recompute_layout();    # now that eye.native_w/h exist, derive end_*/start_*
+
+if (IS_BOOT) {
+    eye.sprite = Sprite(eye.frame[0].Scale(Math.Int(eye.start_w), Math.Int(eye.start_h)));
+    eye.sprite.SetPosition(eye.start_x, eye.start_y, 100);
+    eye.state = "intro";
+} else {
+    eye.sprite = Sprite(eye.frame[0]);
+    eye.sprite.SetPosition(eye.end_x, eye.end_y, 100);
+    eye.state = "idle";
+}
+
+# Idle most of the time on frame 0 (eye open); blink every few seconds
+# on boot. On shutdown/reboot the eye instead closes once and stays shut,
+# rather than looping a blink while the machine disappears underneath it.
+eye.tick = 0;
+eye.blink_frame = 0;
+# refresh_callback's actual call rate isn't guaranteed to match your
+# display's Hz — some renderers fire it as fast as the event loop allows.
+# These are tick counts, not seconds; if the intro feels too fast/slow on
+# your hardware, this is the number to tune (bigger = slower).
+eye.intro_duration = 160;
+eye.idle_interval = 650;   # ticks between blinks (boot)
+eye.close_delay = 60;      # ticks before closing starts (shutdown/reboot — much shorter, these splashes don't stay up long)
+eye.hold_ticks = 15;       # ticks to hold each blink/close keyframe
+
+fun ease_out_cubic(t) {
+    inv = 1 - t;
+    return 1 - inv * inv * inv;
+}
+
+fun refresh_callback() {
+    recompute_layout();
+    eye.tick++;
+
+    if (eye.state == "intro") {
+        t = eye.tick / eye.intro_duration;
+        if (t > 1)
+            t = 1;
+        e = ease_out_cubic(t);
+
+        w = eye.start_w + (eye.native_w - eye.start_w) * e;
+        h = eye.start_h + (eye.native_h - eye.start_h) * e;
+        x = eye.start_x + (eye.end_x - eye.start_x) * e;
+        y = eye.start_y + (eye.end_y - eye.start_y) * e;
+
+        eye.sprite.SetImage(eye.frame[0].Scale(Math.Int(w), Math.Int(h)));
+        eye.sprite.SetPosition(x, y, 100);
+
+        if (t >= 1) {
+            eye.state = "idle";
+            eye.tick = 0;
+            eye.sprite.SetImage(eye.frame[0]);
+            eye.sprite.SetPosition(eye.end_x, eye.end_y, 100);
+            if (progress_box.sprite)
+                progress_box.sprite.SetOpacity(1);
+        }
+    } else if (eye.state == "idle") {
+        idle_threshold = eye.idle_interval;
+        if (IS_SHUTDOWN_LIKE)
+            idle_threshold = eye.close_delay;
+        if (eye.tick >= idle_threshold) {
+            eye.tick = 0;
+            eye.blink_frame = 1;
+            eye.sprite.SetImage(eye.frame[eye.blink_frame]);
+            if (IS_SHUTDOWN_LIKE)
+                eye.state = "closing";
+            else
+                eye.state = "blinking";
+        }
+    } else if (eye.state == "blinking") {
+        if (eye.tick >= eye.hold_ticks) {
+            eye.tick = 0;
+            eye.blink_frame++;
+            if (eye.blink_frame > 4) {
+                eye.blink_frame = 0;
+                eye.state = "idle";
+            }
+            eye.sprite.SetImage(eye.frame[eye.blink_frame]);
+        }
+    } else if (eye.state == "closing") {
+        # Steps forward through the same keyframes (open -> half -> closed)
+        # but stops at frame 3 instead of looping back open. "closed" is
+        # a terminal state — nothing more happens until Plymouth quits.
+        if (eye.tick >= eye.hold_ticks) {
+            eye.tick = 0;
+            eye.blink_frame++;
+            eye.sprite.SetImage(eye.frame[eye.blink_frame]);
+            if (eye.blink_frame >= 3)
+                eye.state = "closed";
+        }
+    }
+}
+Plymouth.SetRefreshFunction(refresh_callback);
+
+# -------------------------------------------------------------- progress ---
+
+progress_box.image = Image("progress_box.png");
+progress_box.sprite = Sprite(progress_box.image);
+progress_box.x = screen.cx - progress_box.image.GetWidth() / 2;
+progress_box.y = eye.end_y + eye.native_h + 40;
+progress_box.sprite.SetPosition(progress_box.x, progress_box.y, 100);
+if (IS_BOOT)
+    progress_box.sprite.SetOpacity(0);   # faded in once the intro tween lands
+else
+    progress_box.sprite.SetOpacity(1);   # no intro on this mode, show right away
+
+progress_bar.original_image = Image("progress_bar.png");
+progress_bar.sprite = Sprite();
+progress_bar.x = progress_box.x + 2;
+progress_bar.y = progress_box.y + 2;
+progress_bar.sprite.SetPosition(progress_bar.x, progress_bar.y, 101);
+
+fun progress_callback(duration, progress) {
+    w = Math.Int(progress_bar.original_image.GetWidth() * progress);
+    if (w < 1)
+        w = 1;
+    progress_bar.image = progress_bar.original_image.Scale(w, progress_bar.original_image.GetHeight());
+    progress_bar.sprite.SetImage(progress_bar.image);
+}
+Plymouth.SetBootProgressFunction(progress_callback);
+
+# -------------------------------------------------------------- messages ---
+
+message_sprite = Sprite();
+message_sprite.SetPosition(screen.x + 20, screen.y + screen.h - 40, 110);
+
+fun message_callback(text) {
+    message_image = Image.Text(text, palette.dim.red, palette.dim.green, palette.dim.blue);
+    message_sprite.SetImage(message_image);
+}
+Plymouth.SetMessageFunction(message_callback);
+
+# ------------------------------------------------- password / questions ---
+
+status = "normal";
+
+fun dialog_setup() {
+    local.lock;
+    local.entry;
+
+    lock.image = Image("lock.png");
+    entry.image = Image("entry.png");
+
+    dialog.total_w = lock.image.GetWidth() + 12 + entry.image.GetWidth();
+    dialog.x = screen.cx - dialog.total_w / 2;
+    dialog.y = progress_box.y + 40;
+
+    lock.sprite = Sprite(lock.image);
+    lock.sprite.SetPosition(dialog.x,
+                            dialog.y + entry.image.GetHeight() / 2 - lock.image.GetHeight() / 2,
+                            120);
+
+    entry.sprite = Sprite(entry.image);
+    entry.sprite.SetPosition(dialog.x + lock.image.GetWidth() + 12, dialog.y, 120);
+
+    dialog.lock = lock;
+    dialog.entry = entry;
+    dialog.bullet_image = Image("bullet.png");
+    dialog_opacity(1);
+}
+
+fun dialog_opacity(opacity) {
+    dialog.lock.sprite.SetOpacity(opacity);
+    dialog.entry.sprite.SetOpacity(opacity);
+    for (index = 0; dialog.bullet[index]; index++) {
+        dialog.bullet[index].sprite.SetOpacity(opacity);
+    }
+}
+
+fun display_normal_callback() {
+    status = "normal";
+    if (dialog)
+        dialog_opacity(0);
+    if (prompt_sprite)
+        prompt_sprite.SetOpacity(0);
+}
+
+fun display_password_callback(prompt, bullets) {
+    status = "password";
+    if (!dialog)
+        dialog_setup();
+    else
+        dialog_opacity(1);
+
+    # prompt text above the entry box
+    if (!prompt_sprite)
+        prompt_sprite = Sprite();
+    prompt_image = Image.Text(prompt, palette.fg.red, palette.fg.green, palette.fg.blue);
+    prompt_sprite.SetImage(prompt_image);
+    prompt_sprite.SetPosition(screen.cx - prompt_image.GetWidth() / 2,
+                              dialog.y - prompt_image.GetHeight() - 12,
+                              120);
+    prompt_sprite.SetOpacity(1);
+
+    # bullets
+    bullet_w = dialog.bullet_image.GetWidth() + 4;
+    margin = 10;
+    max_bullets = Math.Int((dialog.entry.image.GetWidth() - 2 * margin) / bullet_w);
+    if (bullets > max_bullets)
+        bullets = max_bullets;
+
+    for (index = 0; dialog.bullet[index] || index < bullets; index++) {
+        if (!dialog.bullet[index]) {
+            dialog.bullet[index].sprite = Sprite(dialog.bullet_image);
+            dialog.bullet[index].x = dialog.entry.sprite.GetX() + margin + index * bullet_w;
+            dialog.bullet[index].y = dialog.entry.sprite.GetY()
+                                     + dialog.entry.image.GetHeight() / 2
+                                     - dialog.bullet_image.GetHeight() / 2;
+            dialog.bullet[index].sprite.SetPosition(dialog.bullet[index].x,
+                                                    dialog.bullet[index].y,
+                                                    121);
+        }
+        if (index < bullets)
+            dialog.bullet[index].sprite.SetOpacity(1);
+        else
+            dialog.bullet[index].sprite.SetOpacity(0);
+    }
+}
+
+fun display_question_callback(prompt, entry) {
+    status = "question";
+    if (!prompt_sprite)
+        prompt_sprite = Sprite();
+    text = prompt;
+    if (entry != "")
+        text = prompt + " " + entry;
+    prompt_image = Image.Text(text, palette.fg.red, palette.fg.green, palette.fg.blue);
+    prompt_sprite.SetImage(prompt_image);
+    prompt_sprite.SetPosition(screen.cx - prompt_image.GetWidth() / 2,
+                              progress_box.y + 40,
+                              120);
+    prompt_sprite.SetOpacity(1);
+}
+
+Plymouth.SetDisplayNormalFunction(display_normal_callback);
+Plymouth.SetDisplayPasswordFunction(display_password_callback);
+Plymouth.SetDisplayQuestionFunction(display_question_callback);
+
+# ------------------------------------------------------------------ quit ---
+
+fun quit_callback() {
+    eye.sprite.SetOpacity(1);
+}
+Plymouth.SetQuitFunction(quit_callback);

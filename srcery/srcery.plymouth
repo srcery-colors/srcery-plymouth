@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=Srcery
+Description=Srcery boot splash — pairs with the srcery GRUB theme
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/srcery
+ScriptFile=/usr/share/plymouth/themes/srcery/srcery.script
