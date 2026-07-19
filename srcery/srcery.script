@@ -1,13 +1,14 @@
 # srcery Plymouth theme
-# Background matches the srcery GRUB theme exactly (#1C1B19) so the
-# GRUB -> Plymouth handoff is a seamless single color.
+# Background matches srcery-vim's Normal background (g:srcery_background,
+# defaults to g:srcery_black) so the terminal -> Plymouth handoff is a
+# seamless single color.
 #
 # Palette (srcery-colors). Values are 0..1 floats: hex / 255.
 # If srcery-palette changes hex values, update this block only.
 
-palette.bg.red = 0.1098;      palette.bg.green = 0.1059;      palette.bg.blue = 0.0980;   # black        #1C1B19
+palette.bg.red = 0.0706;      palette.bg.green = 0.0667;      palette.bg.blue = 0.0627;   # black        #121110
 palette.fg.red = 0.9882;      palette.fg.green = 0.9098;      palette.fg.blue = 0.7647;   # bright_white #FCE8C3
-palette.dim.red = 0.5686;     palette.dim.green = 0.5059;     palette.dim.blue = 0.4588;  # bright_black #918175
+palette.dim.red = 0.5686;     palette.dim.green = 0.4941;     palette.dim.blue = 0.4196;  # bright_black #917E6B
 palette.orange.red = 1.0000;  palette.orange.green = 0.3725;  palette.orange.blue = 0.0; # orange       #FF5F00
 palette.red.red = 0.9373;     palette.red.green = 0.1843;     palette.red.blue = 0.1529;  # red          #EF2F27
 
