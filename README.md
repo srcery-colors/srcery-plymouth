@@ -17,7 +17,7 @@
 <h2 align="center">Plymouth</h2>
 
 <p align="center">
-Theme for [Plymouth](https://en.wikipedia.org/wiki/Plymouth_(software)).
+Theme for <a href="https://en.wikipedia.org/wiki/Plymouth_(software)">Plymouth</a>.
 </p>
 
 
