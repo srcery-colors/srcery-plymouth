@@ -11,7 +11,6 @@ BuildArch:      noarch
 
 Requires:       plymouth
 Requires:       plymouth-plugin-script
-Requires(post):   plymouth-scripts
 Requires(postun): plymouth-scripts
 
 %description
@@ -35,7 +34,6 @@ install -p -m 0644 srcery/srcery.script %{buildroot}%{_datadir}/plymouth/themes/
 install -p -m 0644 srcery/*.png %{buildroot}%{_datadir}/plymouth/themes/srcery/
 
 %postun
-export PLYMOUTH_PLUGIN_PATH=%{_libdir}/plymouth/
 if [ "$1" -eq 0 ]; then
     if [ "$(%{_sbindir}/plymouth-set-default-theme 2>/dev/null)" == "srcery" ]; then
         %{_sbindir}/plymouth-set-default-theme --reset || :
