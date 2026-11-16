@@ -14,6 +14,8 @@ jobs:
         run: dnf install -y rpmlint rpmdevtools git make
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Mark repo safe for git (container root vs checkout owner)
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: rpmlint the spec
@@ -23,3 +25,14 @@ jobs:
           mkdir -p /tmp/outdir
           make -f .copr/Makefile srpm outdir=/tmp/outdir
           ls /tmp/outdir/*.src.rpm
+      - name: Build the RPM, then check install and erase cleanup
+        run: |
+          rpmbuild --rebuild /tmp/outdir/*.src.rpm --define "_rpmdir /tmp/outdir"
+          dnf install -y /tmp/outdir/noarch/*.rpm
+          plymouth-set-default-theme srcery
+          grep -q '^Theme=srcery' /etc/plymouth/plymouthd.conf
+          dnf remove -y plymouth-theme-srcery
+          if grep -q '^Theme=' /etc/plymouth/plymouthd.conf; then
+            echo "%postun left a Theme= line behind" >&2
+            exit 1
+          fi

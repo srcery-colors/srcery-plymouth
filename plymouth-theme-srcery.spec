@@ -34,15 +34,16 @@ install -p -m 0644 srcery/srcery.script %{buildroot}%{_datadir}/plymouth/themes/
 install -p -m 0644 srcery/*.png %{buildroot}%{_datadir}/plymouth/themes/srcery/
 
 %postun
+# Read plymouthd.conf directly: with our files gone, the no-arg query falls back to another theme.
 if [ "$1" -eq 0 ]; then
-    if [ "$(%{_sbindir}/plymouth-set-default-theme 2>/dev/null)" == "srcery" ]; then
+    if grep -qs '^Theme[[:blank:]]*=[[:blank:]]*srcery[[:blank:]]*$' %{_sysconfdir}/plymouth/plymouthd.conf; then
         %{_sbindir}/plymouth-set-default-theme --reset || :
     fi
 fi
 
 %files
-%license LICENSE
-%doc README.md ATTRIBUTION.md
+%license LICENSE ATTRIBUTION.md
+%doc README.md
 %dir %{_datadir}/plymouth/themes/srcery
 %{_datadir}/plymouth/themes/srcery/srcery.plymouth
 %{_datadir}/plymouth/themes/srcery/srcery.script
