@@ -10,14 +10,13 @@ jobs:
     runs-on: ubuntu-latest
     container: fedora:latest
     steps:
+      # No git, like COPR's make_srpm chroot; checkout falls back to a REST download.
       - name: Install tooling
-        run: dnf install -y rpmlint rpmdevtools git make
+        run: dnf install -y rpmlint rpmdevtools make
       - name: Check out repository
         uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Mark repo safe for git (container root vs checkout owner)
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: rpmlint the spec
         run: rpmlint plymouth-theme-srcery.spec
       - name: Scratch build an SRPM via the COPR Makefile contract
