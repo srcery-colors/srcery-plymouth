@@ -1,0 +1,40 @@
+name: RPM packaging checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  rpmlint-and-scratch-build:
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    steps:
+      # No git, like COPR's make_srpm chroot; checkout falls back to a REST download.
+      - name: Install tooling
+        run: dnf install -y rpmlint rpmdevtools make
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: rpmlint the spec
+        run: rpmlint plymouth-theme-srcery.spec
+      - name: Scratch build an SRPM via the COPR Makefile contract
+        run: |
+          mkdir -p /tmp/outdir
+          make -f .copr/Makefile srpm outdir=/tmp/outdir
+          ls /tmp/outdir/*.src.rpm
+      - name: Build the RPM, then check install and erase cleanup
+        run: |
+          rpmbuild --rebuild /tmp/outdir/*.src.rpm --define "_rpmdir /tmp/outdir"
+          dnf install -y /tmp/outdir/noarch/*.rpm
+          plymouth-set-default-theme srcery
+          grep -q '^Theme=srcery' /etc/plymouth/plymouthd.conf
+          dnf remove -y plymouth-theme-srcery
+          if grep -q '^Theme=' /etc/plymouth/plymouthd.conf; then
+            echo "%postun left a Theme= line behind" >&2
+            exit 1
+          fi
